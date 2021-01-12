@@ -127,20 +127,24 @@ def makeFilterQuery(tags):
     tagQ=len(tags)
     query="SELECT b1.id FROM bookmarks b1 INNER JOIN "
     bookmarks=""
-    idCondition="ON b1.id=b2.id "
-    tagCondition="AND b1.name=? "
-    for i in range(tagQ-1):
-        if i == tagQ-2:
-            bookmarks+="bookmarks "+"b"+str(i+2)+" "
-            if tagQ!=2:
-                idCondition+=" "
-            else:
-                idCondition+=" "
-            tagCondition+="AND "+"b"+str(i+2)+".name=?"
+    idCondition="ON "
+    tagCondition=""
+    for i,j in enumerate(tags):
+        equal='='
+        if j.startswith('-'):
+            equal='!='
+        if i == tagQ-1:
+            #bookmarks+="bookmarks "+"b"+str(i+1)+" "
+            #idCondition+=" "
+            bookmarks+="bookmarks "+"b"+str(i+1)+" "
+            tagCondition+="AND "+"b"+str(i+1)+".name"+equal+"? "
         else:
-            bookmarks+="bookmarks "+"b"+str(i+2)+", "
-            idCondition+="AND "+"b"+str(i+2)+".id"+"="+"b"+str(i+3)+".id "
-            tagCondition+="AND b"+str(i+2)+".name=? "
+            if i==0:
+                idCondition+="b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
+            else:
+                bookmarks+="bookmarks "+"b"+str(i+1)+", "
+                idCondition+="AND b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
+            tagCondition+="AND b"+str(i+1)+".name"+equal+"? "
     return query+bookmarks+idCondition+tagCondition
 
 def filterDbTags(connection, tags=None):
@@ -152,7 +156,9 @@ def filterDbTags(connection, tags=None):
         return tagList
     query=makeFilterQuery(tags)
     try:
+        tags=[t.replace("-","") for t in tags]
         c=connection.cursor()
+        print(query,tags)
         tagList=c.execute(query,tags)
     except:
         print("Couldn't find any matches in DB!")
