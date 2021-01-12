@@ -125,6 +125,29 @@ def fillBookmarksTableSlowly(connection,client=None, nextId=None):
 
 def makeFilterQuery(tags):
     tagQ=len(tags)
+    query="SELECT b1.id  FROM (SELECT * FROM bookmarks WHERE %) b1 INNER JOIN "
+    search="SELECT * FROM bookmarks WHERE "
+    plusConditions=""
+    bookmarks=""
+    idCondition="ON "
+    for i,t in enumerate(tags):
+        if t.startswith('-'):
+            plusConditions+="name!=? AND "
+        else:
+            plusConditions+="name=? AND "
+        if i == 0:
+            bookmarks+=""
+            idCondition+="b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
+        else:
+            bookmarks+="(SELECT * FROM bookmarks WHERE %) b"+str(i+1)+' ,'
+            idCondition+="AND b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
+
+    plusConditions=plusConditions[:-4]
+    bookmarks=bookmarks[:-1]
+    idCondition=idCondition[:-16]
+    query=query+bookmarks+idCondition
+    return query.replace("%",plusConditions)
+
     query="SELECT b1.id FROM bookmarks b1 INNER JOIN "
     bookmarks=""
     idCondition="ON "
@@ -158,8 +181,7 @@ def filterDbTags(connection, tags=None):
     try:
         tags=[t.replace("-","") for t in tags]
         c=connection.cursor()
-        print(query,tags)
-        tagList=c.execute(query,tags)
+        tagList=c.execute(query,tags*len(tags))
     except:
         print("Couldn't find any matches in DB!")
     return tagList.fetchall()
