@@ -24,7 +24,7 @@ def moveToTarget(target):
             source=os.path.join(target, dir)
             fileList=os.listdir(source)
             for file in fileList:
-                shutil.move(os.path.join(source, file), target)
+                shutil.move(os.path.join(source, file), os.path.join(target, file))
             os.rmdir(source)
 
 def getBookmarks(tags, client):
@@ -108,15 +108,15 @@ def removeBookmark(client,id):
         message="Something went wrong!"
     return message
 
-def downloadImages(tags,client):
+def downloadImages(client,tags):
     client=refresh(client)
     target=Path.cwd() / 'Bookmarks'
-    items=getBookmarks(tags,client)
+    items=tags
     l=len(items)
 
     for link in items:
-
-        link.download(
+        ill=client.fetch_illustration(link)
+        ill.download(
             directory=target,
             size=Size.ORIGINAL,
             )

@@ -3,17 +3,13 @@ from time import sleep
 from PixivAPITools import getTags, getBM
 from pixivapi import PixivError
 
-"""connection.execute('''CREATE TABLE illustrations
-     (id integer, pages int, primary key (id))''')
-connection.execute('''CREATE TABLE illustrationTags
-     (illustrationId integer, tagId int, UNIQUE (illustrationId,tagId))''')"""
+DATABASE="BMDB.db"
 
 def createConnection(db_file):
     """ create a database connection to a SQLite database """
     conn = None
     try:
         conn = sqlite3.connect(db_file)
-        print(sqlite3.version)
     except:
         print("Something went wrong!")
     finally:
@@ -124,64 +120,67 @@ def fillBookmarksTableSlowly(connection,client=None, nextId=None):
     connection.close()
 
 def makeFilterQuery(tags):
-    tagQ=len(tags)
-    query="SELECT b1.id  FROM (SELECT * FROM bookmarks WHERE %) b1 INNER JOIN "
-    search="SELECT * FROM bookmarks WHERE "
-    plusConditions=""
-    bookmarks=""
-    idCondition="ON "
-    for i,t in enumerate(tags):
-        if t.startswith('-'):
-            plusConditions+="name!=? AND "
-        else:
-            plusConditions+="name=? AND "
-        if i == 0:
-            bookmarks+=""
-            idCondition+="b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
-        else:
-            bookmarks+="(SELECT * FROM bookmarks WHERE %) b"+str(i+1)+' ,'
-            idCondition+="AND b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
+    query="""SELECT u.id,GROUP_CONCAT(ut.name) as tags
+    FROM illustrations u
+    LEFT JOIN bookmarks as ut ON u.id = ut.id
+    LEFT JOIN tags t ON t.name=ut.name AND t.name IN ()
+    GROUP BY u.id
+    HAVING COUNT(ut.id) >= COUNT(t.name) AND COUNT(t.name) ="""
+    if tags[-1].startswith("-"):
+        tags[-1]="%"+tags[-1].replace('-','')+"%"
+        query+=str(len(tags)-1)+" "
+        values='?,'*(len(tags)-1)
+        query.replace('()','('+values[:-1]+')')
+        query+="AND NOT tags like ?"
+        return query.replace('()','('+values[:-1]+')')
+    else:
+        query+=str(len(tags))
+        values='?,'*len(tags)
+        return query.replace('()','('+values[:-1]+')')
 
-    plusConditions=plusConditions[:-4]
-    bookmarks=bookmarks[:-1]
-    idCondition=idCondition[:-16]
-    query=query+bookmarks+idCondition
-    return query.replace("%",plusConditions)
-
-    query="SELECT b1.id FROM bookmarks b1 INNER JOIN "
-    bookmarks=""
-    idCondition="ON "
-    tagCondition=""
-    for i,j in enumerate(tags):
-        equal='='
-        if j.startswith('-'):
-            equal='!='
-        if i == tagQ-1:
-            #bookmarks+="bookmarks "+"b"+str(i+1)+" "
-            #idCondition+=" "
-            bookmarks+="bookmarks "+"b"+str(i+1)+" "
-            tagCondition+="AND "+"b"+str(i+1)+".name"+equal+"? "
-        else:
-            if i==0:
-                idCondition+="b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
-            else:
-                bookmarks+="bookmarks "+"b"+str(i+1)+", "
-                idCondition+="AND b"+str(i+1)+".id"+"="+"b"+str(i+2)+".id "
-            tagCondition+="AND b"+str(i+1)+".name"+equal+"? "
-    return query+bookmarks+idCondition+tagCondition
-
-def filterDbTags(connection, tags=None):
+def getDbTags(tags):
+    connection=createConnection(DATABASE)
+    if tags.count('-')>1:
+        print ("Only one - tag is supported")
+        return None
     tagList=None
     try:
         tags=tags.split(' ')
     except:
         print("Tags have to be strings separated by a space")
         return tagList
-    query=makeFilterQuery(tags)
-    try:
-        tags=[t.replace("-","") for t in tags]
-        c=connection.cursor()
-        tagList=c.execute(query,tags*len(tags))
-    except:
-        print("Couldn't find any matches in DB!")
-    return tagList.fetchall()
+    if len(tags)>1:
+        tags.sort(reverse=True)
+        query=makeFilterQuery(tags)
+        try:
+            tags=[t.replace("-","") for t in tags]
+            c=connection.cursor()
+            tagList=c.execute(query,tags)
+        except:
+            print("Couldn't find any matches in DB!")
+            return None
+        return [t[0] for t in tagList.fetchall()]
+    else:
+        if tags[0].startswith('-'):
+            try:
+                tags[0]="%"+tags[0].replace('-','')+"%"
+                query="""SELECT f.id, f.tags FROM
+                (SELECT u.id, GROUP_CONCAT(ut.name) as tags
+                FROM illustrations as u
+                LEFT JOIN bookmarks as ut ON u.id = ut.id
+                GROUP BY u.id) f
+                WHERE not f.tags like ? ORDER BY RANDOM() LIMIT 15"""
+                c=connection.cursor()
+                tagList=c.execute(query,tags)
+            except:
+                print("Couldn't find any matches in DB!")
+                return None
+            return [t[0] for t in tagList.fetchall()]
+        else:
+            try:
+                c=connection.cursor()
+                tagList=c.execute("SELECT id FROM bookmarks WHERE name=? ORDER BY RANDOM() LIMIT 15",tags)
+            except:
+                print("Couldn't find any matches in DB!")
+                return None
+            return [t[0] for t in tagList.fetchall()]

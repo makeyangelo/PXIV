@@ -1,6 +1,8 @@
 import tkinter as tk
 from PIL import Image, ImageTk
 import os, io, base64
+import DatabaseTools as dbtools
+import PixivAPITools as apitools
 
 THUMBNAIL_SIZE=(200,200)
 IMGSIZE=(800,800)
@@ -12,9 +14,11 @@ BOOKMARKS_FOLDER=os.path.join(os.getcwd(),"Bookmarks")
 THUMBNAILS_FOLDER=os.path.join(os.getcwd(),"Thumbnails")
 FILES=os.listdir(BOOKMARKS_FOLDER)
 CURRENT_FILES=len(FILES)
+THUMBNAILS=os.listdir(THUMBNAILS_FOLDER)
+CURRENT_THUMBNAILS=len(THUMBNAILS)
 OFFSET=0
 IMAGE_GRID=[]
-
+client=None
 def round18(num):
     flag=0
     while (num>flag):
@@ -33,9 +37,14 @@ def getId(clickedImage):
     return fileId
 
 def makeThumbnails():
-    for file in FILES:
-        image=resizeTo(file,THUMBNAIL_SIZE)
-        ImageTk.getimage(image).save(os.path.join(THUMBNAILS_FOLDER,file[:-3]+"png"))
+    global FILES, THUMBNAILS
+    THUMBNAILS=os.listdir(THUMBNAILS_FOLDER)
+    FILES=os.listdir(BOOKMARKS_FOLDER)
+    if FILES:
+        for file in FILES:
+            if not file in THUMBNAILS:
+                image=resizeTo(file,THUMBNAIL_SIZE)
+                ImageTk.getimage(image).save(os.path.join(THUMBNAILS_FOLDER,file[:-3]+"png"))
 
 def assignImage():
     count=0
@@ -46,14 +55,11 @@ def assignImage():
     for r in range(THUMBNAILS_PER_PAGE[0]):
         for c in range(THUMBNAILS_PER_PAGE[1]):
             try:
-                #print(count)
                 ph=ImageTk.PhotoImage(Image.open(os.path.join(THUMBNAILS_FOLDER, FILES[count+last][:-3]+"png")))
-                #IMAGE_GRID[r][c].configure(image=ph)
                 IMAGE_GRID[r][c].configure(image=ph,text=r*6+c)
                 IMAGE_GRID[r][c].text=(r,c)
                 IMAGE_GRID[r][c].image=ph
-                #IMAGE_GRID[r][c].bind("<<Button-"+str(r*6+c)+">>",
-                # lambda e: NewWindow(IMAGE_GRID[r][c]))
+
             except:
                 ph=ImageTk.PhotoImage(Image.open("imgthmb.png"))
                 IMAGE_GRID[r][c].configure(image=ph)
@@ -101,22 +107,6 @@ def reset():
     OFFSET=0
     assignImage()
 
-class NewWindow(tk.Toplevel):
-    id=0
-
-    def __init__(self, master = None, id=0):
-
-        super().__init__(master = master)
-        self.id=id
-        print(self.id)
-        self.title(self.id)
-        #self.geometry("200x200")
-        #ph=ImageTk.PhotoImage(Image.open(os.path.join(BOOKMARKS_FOLDER, FILES[self.id[0]*6+self.id[1]])))
-        ph=resizeTo(FILES[self.id],IMGSIZE)
-        label = tk.Label(self, image =ph)
-        label.image=ph
-        label.pack()
-
 def displayImage(id):
     display=tk.Toplevel(window)
     display.title(id)
@@ -127,13 +117,60 @@ def displayImage(id):
     label=tk.Label(display,image=ph)
     label.image=ph
     label.pack()
+    if CURRENT_FILES > id+OFFSET:
+        imageId.set(getId(FILES[id+OFFSET]))
+    else:
+        imageId.set("X")
 
 
+def searchAndDownload():
+    global client
+    client=apitools.refresh(client)
+    tags=searchTags.get()
+    bm=dbtools.getDbTags(tags)
+    if bm:
+        global FILES
+        global CURRENT_FILES
+        apitools.downloadImages(client,bm)
+        FILES=os.listdir(BOOKMARKS_FOLDER)
+        CURRENT_FILES=len(FILES)
+        makeThumbnails()
+        assignImage()
+
+class Example(tk.Frame):
+
+    def __init__(self):
+        super().__init__()
+
+        self.initUI()
+
+
+    def initUI(self):
+
+        menubar = tk.Menu(self.master)
+        self.master.config(menu=menubar)
+
+        fileMenu = tk.Menu(menubar)
+        fileMenu.add_command(label="Make Thumbnails", command=self.onMakeThumbnails)
+        menubar.add_cascade(label="File", menu=fileMenu)
+
+
+    def onMakeThumbnails(self):
+
+        makeThumbnails()
+        assignImage()
 
 
 window = tk.Tk()
 window.title("TkPXIV")
 window.geometry("1300x700")
+
+menuBar=Example()
+
+imageId=tk.IntVar()
+imageId.set(0)
+searchTags=tk.StringVar()
+searchTags.set("")
 
 #Create frames
 imgFrame=tk.Frame()
@@ -148,19 +185,12 @@ for row in range(THUMBNAILS_PER_PAGE[0]):
     for col in range(THUMBNAILS_PER_PAGE[1]):
         frame = tk.Frame(master=imgFrame, borderwidth=1)
         frame.grid(row=row, column=col, padx=THUMBNAIL_PAD[0], pady=THUMBNAIL_PAD[1])
-        #frame.event_add('<<Algo-'+str(row*THUMBNAILS_PER_PAGE[0]+col)+'>>',"<Button-1>")
-        #print(help(frame))
         button=tk.Button(master=frame, text=(row,col),command=lambda c=c:displayImage(c))
-        #button.event_add('<<Algo-'+str(row*THUMBNAILS_PER_PAGE[0]+col)+'>>',"<Button-1>")
-        """button.bind('<<Algo-'+str(row*THUMBNAILS_PER_PAGE[0]+col)+'>>',
-         lambda e: NewWindow(frame,id=row*6+col))"""
         button.pack()
         tempList.append(button)
         c+=1
     IMAGE_GRID.append(tempList)
-
 assignImage()
-
 #Create control buttons
 prevBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Prev", command=prevPage)
 prevBttn.pack(side=tk.LEFT)
@@ -168,14 +198,15 @@ nextBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZ
 nextBttn.pack(side=tk.LEFT)
 resetBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Reset",command=reset)
 resetBttn.pack(side=tk.LEFT)
-searchIn=tk.Entry(master=controlsFrame, width=50)
+searchIn=tk.Entry(master=controlsFrame, width=50,textvariable=searchTags)
 searchIn.pack(side=tk.LEFT)
-searchBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Search")
+searchBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Search", command=searchAndDownload)
 searchBttn.pack(side=tk.LEFT)
-idLabel=tk.Label(master=controlsFrame, text='idnumber')
+idLabel=tk.Label(master=controlsFrame, textvariable=imageId)
 idLabel.pack(side=tk.LEFT)
 deleteBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Delete")
 deleteBttn.pack(side=tk.LEFT)
+
 
 
 window.mainloop()
