@@ -19,6 +19,14 @@ CURRENT_THUMBNAILS=len(THUMBNAILS)
 OFFSET=0
 IMAGE_GRID=[]
 client=None
+
+def updateFileList():
+    global FILES, CURRENT_FILES, THUMBNAILS, CURRENT_THUMBNAILS
+    FILES=os.listdir(BOOKMARKS_FOLDER)
+    CURRENT_FILES=len(FILES)
+    THUMBNAILS=os.listdir(THUMBNAILS_FOLDER)
+    CURRENT_THUMBNAILS=len(THUMBNAILS)
+
 def round18(num):
     flag=0
     while (num>flag):
@@ -37,9 +45,7 @@ def getId(clickedImage):
     return fileId
 
 def makeThumbnails():
-    global FILES, THUMBNAILS
-    THUMBNAILS=os.listdir(THUMBNAILS_FOLDER)
-    FILES=os.listdir(BOOKMARKS_FOLDER)
+    updateFileList()
     if FILES:
         for file in FILES:
             if not file in THUMBNAILS:
@@ -117,8 +123,11 @@ def displayImage(id):
     label=tk.Label(display,image=ph)
     label.image=ph
     label.pack()
+    updateFileList()
     if CURRENT_FILES > id+OFFSET:
-        imageId.set(getId(FILES[id+OFFSET]))
+        id=getId(FILES[id+OFFSET])
+        display.title(id)
+        imageId.set(id)
     else:
         imageId.set("X")
 
@@ -129,16 +138,15 @@ def searchAndDownload():
     tags=searchTags.get()
     bm=dbtools.getDbTags(tags)
     if bm:
-        global FILES
-        global CURRENT_FILES
         apitools.downloadImages(client,bm)
-        FILES=os.listdir(BOOKMARKS_FOLDER)
-        CURRENT_FILES=len(FILES)
+        updateFileList()
         makeThumbnails()
         assignImage()
 
 class Example(tk.Frame):
-
+    """
+    Base code by Jan Bodnar
+    on www.zetcode.com"""
     def __init__(self):
         super().__init__()
 
@@ -152,13 +160,36 @@ class Example(tk.Frame):
 
         fileMenu = tk.Menu(menubar)
         fileMenu.add_command(label="Make Thumbnails", command=self.onMakeThumbnails)
+        databaseMenu = tk.Menu(menubar)
+        databaseMenu.add_command(label="Create Database", command=self.onCreateDB)
+        databaseMenu.add_command(label="Update Tags Table", command=self.onUpdateTagTable)
+        databaseMenu.add_command(label="Update Illustrations Table", command=self.onUpdateIllTable)
+        databaseMenu.add_command(label="Update Bookmarks Table", command=self.onUpdateBookmarkTable)
         menubar.add_cascade(label="File", menu=fileMenu)
+        menubar.add_cascade(label="Database", menu=databaseMenu)
 
 
     def onMakeThumbnails(self):
-
         makeThumbnails()
         assignImage()
+    def onCreateDB(self):
+        if not os.path.exists("BMDB.db"):
+            dbtools.createDatabase()
+            print("Database created!")
+        else:
+            print("Database already exists!")
+    def onUpdateIllTable(self):
+        global client
+        client=apitools.refresh(client)
+        dbtools.fillIllTableSlowly(client)
+    def onUpdateTagTable(self):
+        global client
+        client=apitools.refresh(client)
+        dbtools.fillTagTable(client)
+    def onUpdateBookmarkTable(self):
+        global client
+        client=apitools.refresh(client)
+        dbtools.updateBookmarksTable(client)
 
 
 window = tk.Tk()

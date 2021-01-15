@@ -1,6 +1,7 @@
 """https://pixiv-api.readthedocs.io/en/latest/"""
-from pixivapi import Client, Size, Visibility
+from pixivapi import Client, Size, Visibility, PixivError
 from pathlib import Path
+from time import sleep
 import shutil
 import os
 import collections
@@ -27,75 +28,16 @@ def moveToTarget(target):
                 shutil.move(os.path.join(source, file), os.path.join(target, file))
             os.rmdir(source)
 
-def getBookmarks(tags, client):
-    tags=tags.split(" ")
-    tags.sort()
-    allBM=[]
-    allId=[]
-    toRemove=[]
-    for i in tags:
-        if i.startswith('-'):
-            bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=Visibility.PRIVATE, tag=i[1:])
-            if bookmarks['next'] is not None:
-                while bookmarks['next'] is not None:
-                    for img in bookmarks['illustrations']:
-                        if img.id not in toRemove:
-                            toRemove.append(img.id)
-                    bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=Visibility.PRIVATE, tag=i[1:], max_bookmark_id=bookmarks['next'])
-                else:
-                    for img in bookmarks['illustrations']: #Probar si esto rompe cuando no hay más
-                        if img.id not in toRemove:
-                            toRemove.append(img.id)
-            else:
-                for img in bookmarks['illustrations']: #Probar si esto rompe cuando no hay más
-                    if img.id not in toRemove:
-                        toRemove.append(img.id)
-
-        else:
-            tempList=[]
-            bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=Visibility.PRIVATE, tag=i)
-            if bookmarks['next'] is not None:
-                while bookmarks['next'] is not None:
-                    for img in bookmarks["illustrations"]:
-                        if img.id not in toRemove:
-                            allBM.append(img)
-                            tempList.append(img.id)
-                    bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=Visibility.PRIVATE, tag=i,max_bookmark_id=bookmarks['next'])
-                else:
-                    for img in bookmarks["illustrations"]:
-                        if img.id not in toRemove:
-                            allBM.append(img)
-                            tempList.append(img.id)
-            else:
-                for img in bookmarks["illustrations"]:
-                    if img.id not in toRemove:
-                        allBM.append(img)
-                        tempList.append(img.id)
-            allId.append(tempList)
-
-    if len(tags) >1:
-        allId= filterTags(allId)
-        alreadyIn=[]
-        newBM=[]
-        for i in allBM:
-            if i.id in allId and (not i.id in alreadyIn):
-                alreadyIn.append(i.id)
-                newBM.append(i)
-        return newBM
-
-    else:
-        return allBM
-
 def pxLogin():
     client = Client()
     client.login(USERNAME,PASSWORD)
     return client
 
 def refresh(client=None):
-    try:
+    if client:
         client.authenticate(client.refresh_token)
         return client
-    except:
+    else:
         return pxLogin()
 
 def removeBookmark(client,id):
@@ -111,23 +53,26 @@ def removeBookmark(client,id):
 def downloadImages(client,tags):
     client=refresh(client)
     target=Path.cwd() / 'Bookmarks'
-    items=tags
-    l=len(items)
-
-    for link in items:
-        ill=client.fetch_illustration(link)
-        ill.download(
-            directory=target,
-            size=Size.ORIGINAL,
-            )
+    for id in tags:
+        try:
+            ill=client.fetch_illustration(id)
+            ill.download(
+                directory=target,
+                size=Size.ORIGINAL,
+                )
+        except PixivError as e:
+            print("Can't access ID:",id,"Reason:",e)
+            print("Removing from database...")
+            removeIllFromDb(id)
+            pass
     moveToTarget(target)
 
-def getTags():
+def getTags(client):
     allTags=[]
-    client=pxLogin()
     tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=Visibility.PRIVATE, offset=None)
     if tagsDict['next']:
         while tagsDict['next']:
+            sleep(1)
             allTags+=tagsDict['bookmark_tags']
             tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=Visibility.PRIVATE, offset=tagsDict['next'])
         else:

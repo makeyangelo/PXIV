@@ -24,14 +24,38 @@ def createTagTable(connection):
     except:
         print("Something went wrong!")
 
-def fillTagTable(connection):
+def getAllDbTags(connection):
+    c=connection.cursor()
+    query="SELECT * FROM tags"
+    tagList=c.execute(query)
+    tagList=tagList.fetchall()
+    if tagList:
+        temp={}
+        for t in tagList:
+            temp[t[0]]=t[1]
+        tagList=temp
+    return tagList
+
+def fillTagTable(client):
+    connection=createConnection(DATABASE)
+    c=connection.cursor()
     try:
-        allTags=getTags()
+        allTags=getTags(client)
+        dbTags=getAllDbTags(connection)
         for tag in allTags:
-            c.execute("INSERT INTO tags VALUES (?,?)", (tag['name'],tag['count']))
+            name=tag['name']
+            count=tag['count']
+            if not name in dbTags:
+                print("Adding:",name)
+                c.execute("INSERT INTO tags VALUES (?,?)", (name,count))
+            elif count != dbTags[name]:
+                print("Updating:",name)
+                c.execute("UPDATE tags SET count=? WHERE name=?", (count,name))
         connection.commit()
-    except:
-        print("Something went wrong!")
+        connection.close()
+        print("The Tag table has been updated!")
+    except (sqlite3.Error, PixivError) as e:
+        print(e)
         #return c
 def createIllTable(connection):
     try:
@@ -49,25 +73,24 @@ def fillIllTable(connection,nextId=None,client=None):
                 c.execute("INSERT INTO illustrations VALUES (?,?)", (bm.id,bm.page_count))
             connection.commit()
     except (sqlite3.Error, PixivError) as e:
-        print(e)
+        #print(e)
+        nextId=None
     finally:
         return nextId,client
 
-def fillIllTableSlowly(connection,client=None, nextId=None):
+def fillIllTableSlowly(client, nextId=None):
+    connection=createConnection(DATABASE)
     count=0
     nextId,client=fillIllTable(connection,client=client)
     count+=30
     print(count,nextId)
-    sleep(10)
+    sleep(1)
     while nextId:
         nextId,client=fillIllTable(connection,nextId=nextId,client=client)
-        sleep(10)
+        sleep(1)
         count+=30
         print(count,nextId)
-    """else:
-        nextId,client=fillIllTable(connection,nextId=-1,client=client)
-        count+=30
-        print(count,nextId)"""
+    print("The Illustrations table has been updated!")
     connection.close()
 
 
@@ -81,6 +104,7 @@ def createBookmarksTable(connection):
     except (sqlite3.Error, PixivError) as e:
         print(e)
 
+#Gets every BM from every Tag to fill the table, better when table is empty
 def fillBookmarksTable(connection,tag,nextId=None,client=None):
     try:
         c=connection.cursor()
@@ -104,23 +128,23 @@ def getAllTags(connection):
         print("Table is empty or doesn't exist")
     return tags
 
-def fillBookmarksTableSlowly(connection,client=None, nextId=None):
+def fillBookmarksTableSlowly(connection,client, nextId=None):
     tagList=getAllTags(connection)
     count=0
     for tag in tagList:
         nextId=None
         count+=1
-        print(count,nextId,tag[0])
+        print(count,"Out of",len(tagList),"Next id=",nextId,tag[0])
         nextId,client=fillBookmarksTable(connection,nextId=nextId,client=client, tag=tag[0])
-        sleep(10)
+        sleep(1)
         while nextId:
             print(count,nextId,tag[0])
             nextId,client=fillBookmarksTable(connection,nextId=nextId,client=client, tag=tag[0])
-            sleep(10)
+            sleep(1)
     connection.close()
 
-def makeFilterQuery(tags):
-    query="""SELECT u.id,GROUP_CONCAT(ut.name) as tags
+def makeFilterQuery(tags,negTags):
+    query="""SELECT u.id,GROUP_CONCAT(ut.name,'') as tags
     FROM illustrations u
     LEFT JOIN bookmarks as ut ON u.id = ut.id
     LEFT JOIN tags t ON t.name=ut.name AND t.name IN ()
@@ -128,10 +152,10 @@ def makeFilterQuery(tags):
     HAVING COUNT(ut.id) >= COUNT(t.name) AND COUNT(t.name) ="""
     if tags[-1].startswith("-"):
         tags[-1]="%"+tags[-1].replace('-','')+"%"
-        query+=str(len(tags)-1)+" "
-        values='?,'*(len(tags)-1)
+        query+=str(len(tags)-negTags)+" "
+        values='?,'*(len(tags)-negTags)
         query.replace('()','('+values[:-1]+')')
-        query+="AND NOT tags like ?"
+        query+="AND NOT tags like ? "*negTags
         return query.replace('()','('+values[:-1]+')')
     else:
         query+=str(len(tags))
@@ -140,9 +164,7 @@ def makeFilterQuery(tags):
 
 def getDbTags(tags):
     connection=createConnection(DATABASE)
-    if tags.count('-')>1:
-        print ("Only one - tag is supported")
-        return None
+    negTags=tags.count('-')
     tagList=None
     try:
         tags=tags.split(' ')
@@ -151,15 +173,19 @@ def getDbTags(tags):
         return tagList
     if len(tags)>1:
         tags.sort(reverse=True)
-        query=makeFilterQuery(tags)
+        query=makeFilterQuery(tags,negTags)
         try:
-            tags=[t.replace("-","") for t in tags]
+            for i,t in enumerate(tags):
+                if t.startswith("-"):
+                    tags[i]="%"+tags[i].replace('-','')+"%"
             c=connection.cursor()
             tagList=c.execute(query,tags)
+            tagList=tagList.fetchall()
         except:
             print("Couldn't find any matches in DB!")
             return None
-        return [t[0] for t in tagList.fetchall()]
+        connection.close()
+        return [t[0] for t in tagList]
     else:
         if tags[0].startswith('-'):
             try:
@@ -172,15 +198,67 @@ def getDbTags(tags):
                 WHERE not f.tags like ? ORDER BY RANDOM() LIMIT 15"""
                 c=connection.cursor()
                 tagList=c.execute(query,tags)
+                tagList=tagList.fetchall()
             except:
                 print("Couldn't find any matches in DB!")
                 return None
-            return [t[0] for t in tagList.fetchall()]
+            connection.close()
+            return [t[0] for t in tagList]
         else:
             try:
                 c=connection.cursor()
                 tagList=c.execute("SELECT id FROM bookmarks WHERE name=? ORDER BY RANDOM() LIMIT 15",tags)
+                tagList=tagList.fetchall()
             except:
                 print("Couldn't find any matches in DB!")
                 return None
-            return [t[0] for t in tagList.fetchall()]
+            connection.close()
+            return [t[0] for t in tagList]
+
+def createDatabase():
+    conn=createConnection(DATABASE)
+    if conn:
+        createTagTable(conn)
+        createIllTable(conn)
+        createBookmarksTable(conn)
+        conn.close()
+
+#Gets every illustration that doesnt have a bookmark entry already
+#Better when you just want to add new BM to the DB
+def updateBookmarksTable(client):
+    connection=createConnection(DATABASE)
+    c=connection.cursor()
+    if c.execute("SELECT * FROM bookmarks limit 1").fetchall():
+        print("")
+        query="""SELECT u.id,GROUP_CONCAT(ut.name) as tags
+                FROM illustrations u
+                LEFT JOIN bookmarks as ut ON u.id = ut.id
+                LEFT JOIN tags t ON t.name=ut.name
+                GROUP BY u.id
+                HAVING COUNT(ut.id) >= COUNT(t.name) AND tags is NULL"""
+        ill=c.execute(query).fetchall()
+        #ill=[i[0] for i in ill.fetchall()]
+        for i in ill:
+            tags=client.fetch_bookmark(i[0])
+            sleep(1)
+            temp=[]
+            for t in tags['tags']:
+                if t['is_registered']:
+                    temp.append(t['name'])
+            for t in temp:
+                print("Updating:",i[0],"with",t)
+                c.execute("INSERT INTO bookmarks VALUES (?,?)", (i[0],t))
+        connection.commit()
+        print("Bookmarks Table has been updated!")
+        connection.close()
+    else:
+        print("This might take a while depending on how many Bookmarks you have")
+        fillBookmarksTableSlowly(connection,client)
+
+def removeIllFromDb(id):
+    connection=createConnection()
+    c=connection.cursor()
+    c.execute("DELETE FROM bookmarks WHERE id=?",id)
+    c.execute("DELETE FROM illustrations WHERE id=?",id)
+    connection.commit()
+    connection.close()
