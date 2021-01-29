@@ -53,7 +53,9 @@ def removeBookmark(client,id):
 def downloadImages(client,tags):
     client=refresh(client)
     target=Path.cwd() / 'Bookmarks'
-    for id in tags:
+    total=len(tags)
+    for i,id in enumerate(tags):
+        print(i+1,"/",total,"Illustrations")
         try:
             ill=client.fetch_illustration(id)
             ill.download(
@@ -66,6 +68,7 @@ def downloadImages(client,tags):
             removeIllFromDb(id)
             pass
     moveToTarget(target)
+    print("Download completed!")
 
 def getTags(client):
     allTags=[]

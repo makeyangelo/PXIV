@@ -136,8 +136,17 @@ def searchAndDownload():
     global client
     client=apitools.refresh(client)
     tags=searchTags.get()
-    bm=dbtools.getDbTags(tags)
-    if bm:
+    bm,total=dbtools.getDbTags(tags)
+    r=input(str(len(bm))+" Illustrations with\n"+str(total)+" Images\nProceed? Y/n ")
+    if r.lower() == "y":
+        r=True
+    else:
+        r=False
+    if not r:
+        print("Download canceled!")
+    elif not bm:
+        print("No illustrations with those tags found!")
+    else:
         apitools.downloadImages(client,bm)
         updateFileList()
         makeThumbnails()

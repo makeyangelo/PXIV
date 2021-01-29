@@ -144,7 +144,7 @@ def fillBookmarksTableSlowly(connection,client, nextId=None):
     connection.close()
 
 def makeFilterQuery(tags,negTags):
-    query="""SELECT u.id,GROUP_CONCAT(ut.name,'') as tags
+    query="""SELECT u.id,u.page_count,GROUP_CONCAT(ut.name,'') as tags
     FROM illustrations u
     LEFT JOIN bookmarks as ut ON u.id = ut.id
     LEFT JOIN tags t ON t.name=ut.name AND t.name IN ()
@@ -185,13 +185,13 @@ def getDbTags(tags):
             print("Couldn't find any matches in DB!")
             return None
         connection.close()
-        return [t[0] for t in tagList]
+        return [t[0] for t in tagList], sum([t[1] for t in tagList])
     else:
         if tags[0].startswith('-'):
             try:
                 tags[0]="%"+tags[0].replace('-','')+"%"
-                query="""SELECT f.id, f.tags FROM
-                (SELECT u.id, GROUP_CONCAT(ut.name) as tags
+                query="""SELECT f.id,f.page_count, f.tags FROM
+                (SELECT u.id,u.page_count, GROUP_CONCAT(ut.name) as tags
                 FROM illustrations as u
                 LEFT JOIN bookmarks as ut ON u.id = ut.id
                 GROUP BY u.id) f
@@ -203,17 +203,18 @@ def getDbTags(tags):
                 print("Couldn't find any matches in DB!")
                 return None
             connection.close()
-            return [t[0] for t in tagList]
+            return [t[0] for t in tagList], sum([t[1] for t in tagList])
         else:
             try:
+                query=makeFilterQuery(tags,[])
                 c=connection.cursor()
-                tagList=c.execute("SELECT id FROM bookmarks WHERE name=? ORDER BY RANDOM() LIMIT 15",tags)
+                tagList=c.execute(query +" ORDER BY RANDOM() LIMIT 15",tags)
                 tagList=tagList.fetchall()
             except:
                 print("Couldn't find any matches in DB!")
                 return None
             connection.close()
-            return [t[0] for t in tagList]
+            return [t[0] for t in tagList], sum([t[1] for t in tagList])
 
 def createDatabase():
     conn=createConnection(DATABASE)
@@ -238,7 +239,9 @@ def updateBookmarksTable(client):
                 HAVING COUNT(ut.id) >= COUNT(t.name) AND tags is NULL"""
         ill=c.execute(query).fetchall()
         #ill=[i[0] for i in ill.fetchall()]
-        for i in ill:
+        total=len(ill)
+        for c,i in enumerate(ill):
+            print(c,"/",total)
             tags=client.fetch_bookmark(i[0])
             sleep(1)
             temp=[]
