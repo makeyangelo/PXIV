@@ -8,6 +8,7 @@ import collections
 
 USERNAME=""
 PASSWORD=""
+VISIBILITY=Visibility.PRIVATE
 
 def filterTags(tagList):
     while len(tagList)>1:
@@ -72,12 +73,12 @@ def downloadImages(client,tags):
 
 def getTags(client):
     allTags=[]
-    tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=Visibility.PRIVATE, offset=None)
+    tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=VISIBILITY, offset=None)
     if tagsDict['next']:
         while tagsDict['next']:
             sleep(1)
             allTags+=tagsDict['bookmark_tags']
-            tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=Visibility.PRIVATE, offset=tagsDict['next'])
+            tagsDict=client.fetch_user_bookmark_tags(client.account.id, visibility=VISIBILITY, offset=tagsDict['next'])
         else:
             allTags+=tagsDict['bookmark_tags']
     else:
@@ -102,5 +103,9 @@ def getAllIds():
 
 def getBM(nextId=None,client=None,tag=None):
         client=refresh(client)
-        bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=Visibility.PRIVATE, max_bookmark_id=nextId,tag=tag)
+        bookmarks=client.fetch_user_bookmarks(client.account.id, visibility=VISIBILITY, max_bookmark_id=nextId,tag=tag)
         return bookmarks['illustrations'],bookmarks['next'],client
+
+def resetIllustration(client,id):
+    client.delete_bookmark(id)
+    client.add_bookmark(id,visibility=VISIBILITY)

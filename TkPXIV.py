@@ -152,6 +152,16 @@ def searchAndDownload():
         makeThumbnails()
         assignImage()
 
+def resetIllustration():
+    global client
+    client=apitools.refresh(client)
+    try:
+        apitools.resetIllustration(client,imageId)
+        dbtools.removeIllFromDb(imageId)
+        print("Bookmark has been reset!")
+    except:
+        print("Something went wrong :(")
+
 class Example(tk.Frame):
     """
     Base code by Jan Bodnar
@@ -244,7 +254,7 @@ searchBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_S
 searchBttn.pack(side=tk.LEFT)
 idLabel=tk.Label(master=controlsFrame, textvariable=imageId)
 idLabel.pack(side=tk.LEFT)
-deleteBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="Delete")
+deleteBttn=tk.Button(master=controlsFrame, height=BUTTON_SIZE[0], width=BUTTON_SIZE[1], text="DeleteTags", command=resetIllustration)
 deleteBttn.pack(side=tk.LEFT)
 
 
